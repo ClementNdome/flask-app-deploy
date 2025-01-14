@@ -1,0 +1,187 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WEB GIS - Schools</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css">
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #004d40;
+            padding: 10px 20px;
+            color: white;
+        }
+
+        .navbar h1 {
+            font-size: 1.8rem;
+            margin: 0;
+        }
+
+        .navbar button {
+            background-color: #00796b;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            margin-right: 10px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .navbar button:hover {
+            background-color: #004d40;
+        }
+
+        #map {
+            height: calc(90vh - 50px); /* Reduce map height to fit footer */
+            width: 100%;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 70px; /* Ensure legend stays above footer */
+            left: 30px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+            font-size: 14px;
+        }
+
+        .legend div {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .legend span {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 10px;
+            background-color: #004d40;
+            color: white;
+            height: 50px;
+            line-height: 30px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>WEB GIS - Schools</h1>
+        <div>
+            <button onclick="home()">Home</button>
+            <button onclick="downloadGeoJSON()">Download</button>
+            <button onclick="triggerFileInput()">Upload</button>
+            <input type="file" id="fileInput" accept=".geojson" onchange="uploadGeoJSON(event)">
+            <button onclick="showFAQs()">FAQs</button>
+        </div>
+    </div>
+    <div id="map"></div>
+    <div class="legend" id="mapLegend">
+        <h4>Legend</h4>
+        <div>
+            <span style="background: #7e9e26;"></span> School Location
+        </div>
+    </div>
+    <footer>Created by C&N Ventures © 2024</footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <script>
+        const map = L.map('map').setView([-1.286389, 36.817223], 7);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add MarkerClusterGroup
+        const markers = L.markerClusterGroup();
+
+        // Fetch data and add markers
+        fetch('/schools')
+            .then(response => response.json())
+            .then(data => {
+                data.forEach(school => {
+                    const geometry = JSON.parse(school.geometry);
+                    const marker = L.marker([geometry.coordinates[1], geometry.coordinates[0]])
+                        .bindPopup(`<strong>${school.name}</strong>`);
+                    markers.addLayer(marker);
+                });
+                map.addLayer(markers);
+            });
+
+        // Download GeoJSON
+        function downloadGeoJSON() {
+            fetch('/schools')
+                .then(response => response.json())
+                .then(data => {
+                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'schools.geojson';
+                    a.click();
+                });
+        }
+
+        // Trigger file input on button click
+        function triggerFileInput() {
+            document.getElementById('fileInput').click();
+        }
+
+        // Upload GeoJSON
+        function uploadGeoJSON(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = () => {
+                const geojsonData = JSON.parse(reader.result);
+                L.geoJSON(geojsonData, {
+                    onEachFeature: (feature, layer) => {
+                        if (feature.properties && feature.properties.name) {
+                            layer.bindPopup(`<strong>${feature.properties.name}</strong>`);
+                        }
+                    }
+                }).addTo(map);
+            };
+            reader.readAsText(file);
+        }
+
+        // FAQs (dummy implementation)
+        function showFAQs() {
+            alert("FAQs functionality coming soon!");
+        }
+
+        // Home button functionality
+        function home() {
+            map.setView([-1.286389, 36.817223], 7);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+open the folder after extracting to where the requirements file is found, 
+
+note: ensure you open the main.py file and cchange the postgres password to match yours and incase you have a differnet port number, do the sam too
+
+go to the folder containing everything;
+open cmd at in that directory
+run: 
+pip install -r requirements.txt
+
+oafter installation, run the following command on the terminal;
+
+python main.py 
