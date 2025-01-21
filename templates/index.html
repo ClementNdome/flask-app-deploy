@@ -1,6 +1,6 @@
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -43,13 +43,15 @@
         }
 
         #map {
-            height: calc(90vh - 50px); /* Reduce map height to fit footer */
+            height: calc(90vh - 50px);
+            /* Reduce map height to fit footer */
             width: 100%;
         }
 
         .legend {
             position: absolute;
-            bottom: 70px; /* Ensure legend stays above footer */
+            bottom: 70px;
+            /* Ensure legend stays above footer */
             left: 30px;
             background: white;
             padding: 10px;
@@ -90,6 +92,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="navbar">
         <h1>WEB GIS - Schools</h1>
@@ -105,7 +108,7 @@
     <div class="legend" id="mapLegend">
         <h4>Legend</h4>
         <div>
-            <span style="background: #7e9e26;"></span> School Location
+            <span style="background: #abb395;"></span> Schools
         </div>
     </div>
     <footer>Created by C&N Ventures © 2024</footer>
@@ -124,18 +127,37 @@
         // Add MarkerClusterGroup
         const markers = L.markerClusterGroup();
 
-        // Fetch data and add markers
+
+
+        // Define a custom school icon
+        const schoolIcon = L.icon({
+            iconUrl: 'https://example.com/school-icon.png', // Replace with your icon URL
+            iconSize: [32, 32], // Adjust size as needed
+            iconAnchor: [16, 32], // Anchor the icon at the bottom center
+            popupAnchor: [0, -32] // Adjust popup position relative to the icon
+        });
+        // Fetch GeoJSON data and add to the map with clustering
         fetch('/schools')
             .then(response => response.json())
             .then(data => {
-                data.forEach(school => {
-                    const geometry = JSON.parse(school.geometry);
-                    const marker = L.marker([geometry.coordinates[1], geometry.coordinates[0]])
-                        .bindPopup(`<strong>${school.name}</strong>`);
-                    markers.addLayer(marker);
+                L.geoJSON(data, {
+                    pointToLayer: (feature, latlng) => {
+                        // Create a marker for each feature
+                        return L.marker(latlng);
+                    },
+                    onEachFeature: (feature, layer) => {
+                        // Add a popup with the school name
+                        if (feature.properties && feature.properties.NAME) {
+                            layer.bindPopup(`<strong>${feature.properties.NAME}</strong>`);
+                        }
+                    }
+                }).eachLayer(layer => {
+                    markers.addLayer(layer); // Add each marker to the cluster group
                 });
-                map.addLayer(markers);
-            });
+
+                map.addLayer(markers); // Add the cluster group to the map
+            })
+            .catch(error => console.error('Error loading GeoJSON data:', error));
 
         // Download GeoJSON
         function downloadGeoJSON() {
@@ -184,4 +206,5 @@
         }
     </script>
 </body>
+
 </html>
