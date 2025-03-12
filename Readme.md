@@ -1,11 +1,27 @@
-# this isa simple use case of flask and postgres database to store and manipulate data on schools showing their locations and with capabilies to perform operations such as nearest school, school with highest popuation and others
----------------------------------------------------
-## this site is hosted online: https:\\webgis-schools.onrender.com
-------------------------------------------------------
-## to install this and run it locally;
-1. clone the repository
-2. install the requirements using python -r requirements.txt
-3. run the server: python main.py 
-4. Navigate to http://127.0.0.1:5000/ to access the site
+# Flask Simple WebGIS Showing Schools
 
-##goood to go, happy coding and dont forget to add more features; all collaborations are welcome!!
+This is a simple WebGIS application built with Flask to display school locations. The application allows users to visualize school locations on an interactive map.
+
+## Features
+- Interactive map displaying school locations.
+- Built with Flask, a lightweight Python web framework.
+- Easy to deploy and customize.
+
+## Technologies Used
+- **Flask**: A lightweight Python web framework.
+- **Leaflet.js**: A JavaScript library for interactive maps.
+- **PostgreSQL**: A powerful, open-source relational database system.
+- **PostGIS**: A spatial database extender for PostgreSQL.
+- **HTML/CSS/JavaScript**: For front-end development.
+
+## Installation
+
+### Prerequisites
+- Python 3.x
+- PostgreSQL with PostGIS extension
+- Git
+
+### Steps to Run the Project
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/ClementNdome/flask-simple-webgis-showing-schools.git
