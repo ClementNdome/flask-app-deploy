@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Buffer Search - Schools</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>body{margin:0;font-family:Inter, Arial}#map{height:calc(100vh - 140px)}.controls{padding:8px}@media(max-width:767px){#map{height:50vh}}</style>
+  </head>
+  <body>
+    <div class="d-flex justify-content-between align-items-center" style="background:#004d40;color:#fff;padding:10px">
+      <div><strong>Buffer search (click to set centre)</strong></div>
+      <div><a class="btn btn-sm btn-outline-light" href="{{ url_for('index') }}">Back</a></div>
+    </div>
+    <div class="container-fluid py-2">
+      <div class="row g-2 align-items-center">
+        <div class="col-12 col-md-8">
+          <div id="map"></div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="controls p-3 bg-light rounded">
+            <div class="mb-2">Radius (km): <input id="radius" class="form-control d-inline-block" value="2" style="width:110px; display:inline-block"> Limit: <input id="limit" class="form-control d-inline-block" value="500" style="width:110px; display:inline-block; margin-left:8px"></div>
+            <div class="small text-muted">Tap map to choose centre</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const center = {{ center|tojson }};
+      const zoom = {{ zoom|tojson }};
+      const map = L.map('map').setView(center, zoom);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+      const layer = L.layerGroup().addTo(map);
+
+      map.on('click', async function(e){
+        const {lat,lng}=e.latlng;
+        const radius = document.getElementById('radius').value || '1';
+        const limit = document.getElementById('limit').value || '500';
+        const url = `{{ url_for('schools_buffer') }}?lon=${lng}&lat=${lat}&radius_km=${radius}&k=${limit}`;
+        try{
+          const res = await fetch(url);
+          const data = await res.json();
+          layer.clearLayers();
+          // draw the buffer circle
+          L.circle([lat,lng], {radius: parseFloat(radius)*1000, color:'#ff7800', fill:false}).addTo(layer);
+          L.geoJSON(data, {onEachFeature:(f,ly)=>ly.bindPopup(f.properties.name||f.properties.NAME||'School')}).addTo(layer);
+          map.fitBounds(layer.getBounds());
+        }catch(err){console.error(err);alert('Error fetching buffered features')}
+      });
+
+    </script>
+  </body>
+</html>

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>School Analysis - Schools</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      body { margin:0; font-family:Inter, Arial; }
+      .page-header { background:#004d40; color:#fff; padding:10px 16px }
+      #map { width:100%; height: calc(100vh - 140px); }
+      .sidebar { padding:15px; overflow-y:auto; }
+      .stat-card { background:white; padding:15px; margin-bottom:15px; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+      .stat-card h3 { margin:0 0 10px; color:#004d40 }
+      .filters select { width:100%; padding:8px; margin:5px 0 }
+      /* ensure charts are responsive and keep a sensible min height */
+      .chart-wrap { min-height:220px; height:35vh }
+      @media (max-width:767px){ #map { height: 50vh } .chart-wrap{ height: 28vh } }
+    </style>
+  </head>
+  <body>
+    <div class="page-header d-flex justify-content-between align-items-center">
+      <div><strong>School Analysis Dashboard</strong></div>
+      <div>
+        <button class="btn btn-sm btn-light me-2" onclick="toggleHeatmap()">Toggle Heatmap</button>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('index') }}">Back</a>
+      </div>
+    </div>
+
+    <div class="container-fluid">
+      <div class="row g-0">
+        <div class="col-12 col-md-8">
+          <div id="map"></div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="sidebar p-3">
+            <div class="filters mb-3">
+              <h5>Filters</h5>
+              <select id="countyFilter" class="form-select" onchange="applyFilters()">
+                <option value="">All Counties</option>
+              </select>
+              <select id="typeFilter" class="form-select mt-2" onchange="applyFilters()">
+                <option value="">All Types</option>
+              </select>
+            </div>
+            <div class="stat-card">
+              <h3>School Density</h3>
+              <div>Schools per County</div>
+              <div class="chart-wrap"><canvas id="densityChart"></canvas></div>
+            </div>
+            <div class="stat-card">
+              <h3>School Types</h3>
+              <div>Distribution by Type</div>
+              <div class="chart-wrap"><canvas id="typeChart"></canvas></div>
+            </div>
+            <div class="stat-card">
+              <h3>Coverage Analysis</h3>
+              <div id="coverageStats"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const center = {{ center|tojson }};
+      const zoom = {{ zoom|tojson }};
+      const map = L.map('map').setView(center, zoom);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+      const markers = L.layerGroup().addTo(map);
+      let heatLayer = null;
+      let allFeatures = [];
+      let densityChart = null;
+      let typeChart = null;
+
+      // Load data and initialize
+      async function initialize() {
+        try {
+          const res = await fetch("{{ url_for('get_schools') }}");
+          const data = await res.json();
+          allFeatures = data.features;
+          
+          // Initialize filters
+          const counties = new Set();
+          const types = new Set();
+          allFeatures.forEach(f => {
+            if (f.properties.county) counties.add(f.properties.county);
+            if (f.properties.type) types.add(f.properties.type);
+          });
+          
+          const countyFilter = document.getElementById('countyFilter');
+          counties.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = opt.textContent = c;
+            countyFilter.appendChild(opt);
+          });
+
+          const typeFilter = document.getElementById('typeFilter');
+          types.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = opt.textContent = t;
+            typeFilter.appendChild(opt);
+          });
+
+          // Show initial state
+          updateMap(allFeatures);
+          updateCharts(allFeatures);
+          updateStats(allFeatures);
+
+        } catch(err) { console.error('Error loading data:', err); }
+      }
+
+      function updateMap(features) {
+        markers.clearLayers();
+        if (heatLayer) map.removeLayer(heatLayer);
+        
+        L.geoJSON(features, {
+          pointToLayer: (f,latlng) => L.circleMarker(latlng, {
+            radius: 6,
+            fillColor: '#004d40',
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+          }).bindPopup(f.properties.name || f.properties.NAME || 'School')
+        }).addTo(markers);
+      }
+
+      function toggleHeatmap() {
+        if (heatLayer) {
+          map.removeLayer(heatLayer);
+          heatLayer = null;
+          if (!map.hasLayer(markers)) map.addLayer(markers);
+        } else {
+          const points = allFeatures.map(f => {
+            const coords = f.geometry.coordinates;
+            return [coords[1], coords[0], 1];
+          });
+          heatLayer = L.heatLayer(points, {
+            radius: 25,
+            blur: 15,
+            maxZoom: 10,
+            gradient: {0.4: '#004d40', 0.6: '#00796b', 0.8: '#009688', 1: '#b2dfdb'}
+          }).addTo(map);
+          map.removeLayer(markers);
+        }
+      }
+
+      function updateCharts(features) {
+        const ctx1 = document.getElementById('densityChart').getContext('2d');
+        const ctx2 = document.getElementById('typeChart').getContext('2d');
+
+        // Count by county
+        const countyData = {};
+        features.forEach(f => {
+          const county = f.properties.county || 'Unknown';
+          countyData[county] = (countyData[county] || 0) + 1;
+        });
+
+        if (densityChart) densityChart.destroy();
+        densityChart = new Chart(ctx1, {
+          type: 'bar',
+          data: {
+            labels: Object.keys(countyData),
+            datasets: [{
+              label: 'Schools',
+              data: Object.values(countyData),
+              backgroundColor: '#004d40'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } }
+          }
+        });
+
+        // Count by type
+        const typeData = {};
+        features.forEach(f => {
+          const type = f.properties.type || 'Unknown';
+          typeData[type] = (typeData[type] || 0) + 1;
+        });
+
+        if (typeChart) typeChart.destroy();
+        typeChart = new Chart(ctx2, {
+          type: 'doughnut',
+          data: {
+            labels: Object.keys(typeData),
+            datasets: [{
+              data: Object.values(typeData),
+              backgroundColor: ['#004d40','#00796b','#009688','#26a69a','#4db6ac','#80cbc4','#b2dfdb']
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false
+          }
+        });
+      }
+
+      function updateStats(features) {
+        const total = features.length;
+        const bounds = map.getBounds();
+        const visible = features.filter(f => {
+          const coords = f.geometry.coordinates;
+          return bounds.contains([coords[1], coords[0]]);
+        }).length;
+
+        document.getElementById('coverageStats').innerHTML = `
+          <p>Total Schools: ${total}</p>
+          <p>Visible in View: ${visible}</p>
+          <p>Density: ${(total / (bounds.getNorth() - bounds.getSouth()) / (bounds.getEast() - bounds.getWest())).toFixed(2)} schools/sq degree</p>
+        `;
+      }
+
+      function applyFilters() {
+        const county = document.getElementById('countyFilter').value;
+        const type = document.getElementById('typeFilter').value;
+        
+        const filtered = allFeatures.filter(f => {
+          if (county && f.properties.county !== county) return false;
+          if (type && f.properties.type !== type) return false;
+          return true;
+        });
+
+        updateMap(filtered);
+        updateCharts(filtered);
+        updateStats(filtered);
+      }
+
+      // Initialize on load
+      initialize();
+
+      // Update stats when map moves
+      map.on('moveend', () => {
+        const county = document.getElementById('countyFilter').value;
+        const type = document.getElementById('typeFilter').value;
+        
+        const filtered = allFeatures.filter(f => {
+          if (county && f.properties.county !== county) return false;
+          if (type && f.properties.type !== type) return false;
+          return true;
+        });
+        updateStats(filtered);
+      });
+    </script>
+  </body>
+</html>
