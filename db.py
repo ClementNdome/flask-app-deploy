@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+import os
+import dotenv
 
-# Database configuration
-# Using credentials provided: user=postgres password=password_0323
-DATABASE_URL = "postgresql://postgres:0323@localhost:5432/schools_ke"
+DATABASE_URL = dotenv.get_key(dotenv.find_dotenv(), "DATABASE_URL")
 
 # Create engine and session factory
 engine = create_engine(DATABASE_URL)
