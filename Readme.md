@@ -1,3 +1,49 @@
+# Flask PostGIS Example (schools)
+
+This project serves a GeoJSON of schools. Changes made:
+
+- Added PostGIS-backed storage using SQLAlchemy + GeoAlchemy2.
+- Added `load_data.py` to push `data/sec.geojson` into the PostGIS `schools` table.
+- `main.py` now reads features from the database and provides spatial endpoints: bbox, nearest, and stats.
+
+Database connection is configured in `db.py`:
+
+postgresql://postgres:password_0323@localhost:5432/schools_ke
+
+Setup steps (local dev):
+
+1. Create the database and enable PostGIS (requires superuser permissions):
+
+   - Create DB:
+     - In psql: `CREATE DATABASE schools_ke;`
+   - Enable PostGIS (if your user has privileges):
+     - `\c schools_ke` then `CREATE EXTENSION postgis;`
+
+2. Install Python deps (prefer a virtualenv):
+
+   pip install -r requirements.txt
+
+3. Load the GeoJSON into the database:
+
+   python load_data.py
+
+   The loader will attempt to `CREATE EXTENSION IF NOT EXISTS postgis;` and then insert features from `data/sec.geojson`.
+
+4. Run the Flask app:
+
+   python main.py
+
+Endpoints:
+
+- GET /schools -> returns all features
+- GET /schools?bbox=minx,miny,maxx,maxy -> features intersecting bbox
+- GET /schools?lon=<lon>&lat=<lat>&k=5 -> nearest k features to point
+- GET /schools/stats -> count and extent of stored geometries
+
+Notes:
+
+- If you cannot create the PostGIS extension from the script (permissions), create it manually as shown above.
+- The loader maps `properties` to a JSON column and attempts to use common `name` properties.
 # Flask Simple WebGIS Showing Schools
 
 ## Overview
