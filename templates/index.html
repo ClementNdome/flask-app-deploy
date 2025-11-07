@@ -6,117 +6,133 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WEB GIS - Schools</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% if use_local_leaflet_draw %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet-draw/leaflet.draw.css') }}">
+    {% else %}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"{% if leaflet_draw_integrity.get('css') %} integrity="{{ leaflet_draw_integrity['css'] }}" crossorigin="anonymous"{% endif %}>
+    {% endif %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css">
     <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
+        body { margin: 0; font-family: Inter, Arial, sans-serif; }
+        /* Make navbar visually match site colors using Bootstrap utility classes where possible */
+        #map { width:100%; height: calc(100vh - 120px); }
+        /* results panel: desktop floating on right, mobile bottom sheet */
+        #resultsPanel {
+            position: absolute; right: 10px; top: 70px; width: 360px; max-height:70vh; overflow:auto;
+            background: rgba(255,255,255,0.98); z-index:1500; border:1px solid #ddd; padding:8px; border-radius:6px; display:none;
         }
+        .legend { position:absolute; bottom:70px; left:16px; background:#fff; padding:10px; border-radius:6px; box-shadow:0 3px 12px rgba(0,0,0,.15); z-index:1200 }
+        footer { text-align:center; padding:10px; background:#004d40; color:#fff }
+        #fileInput { display:none }
+        .suggestion-item:focus, .suggestion-item:hover { background:#eef; outline:none }
+        .result-item:focus, .result-item:hover { background:#eef; outline:none }
+        .result-item[aria-selected='true'] { background:#ddeeff }
 
-        .navbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background-color: #004d40;
-            padding: 10px 20px;
-            color: white;
-        }
+        /* bottom-sheet handle */
+        .sheet-handle {
+            width:40px; height:6px; background:#ddd; border-radius:4px; margin:8px auto; }
+        .sheet-close {
+            position:absolute; right:8px; top:8px; background:transparent; border:none; font-size:18px }
 
-        .navbar h1 {
-            font-size: 1.8rem;
-            margin: 0;
-        }
-
-        .navbar button {
-            background-color: #00796b;
-            border: none;
-            color: white;
-            padding: 10px 15px;
-            margin-right: 10px;
-            font-size: 14px;
-            cursor: pointer;
-        }
-
-        .navbar button:hover {
-            background-color: #004d40;
-        }
-
-        #map {
-            height: calc(90vh - 50px);
-            /* Reduce map height to fit footer */
-            width: 100%;
-        }
-
-        .legend {
-            position: absolute;
-            bottom: 70px;
-            /* Ensure legend stays above footer */
-            left: 30px;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-        }
-
-        .legend h4 {
-            margin: 0 0 10px;
-            font-size: 14px;
-        }
-
-        .legend div {
-            display: flex;
-            align-items: center;
-            margin-bottom: 5px;
-        }
-
-        .legend span {
-            width: 20px;
-            height: 20px;
-            display: inline-block;
-            margin-right: 8px;
-        }
-
-        footer {
-            text-align: center;
-            padding: 10px;
-            background-color: #004d40;
-            color: white;
-            height: 50px;
-            line-height: 30px;
-        }
-
-        #fileInput {
-            display: none;
+        /* Small screens: make results panel a bottom sheet and make search full width */
+        @media (max-width: 767px) {
+            #map { height: calc(100vh - 160px); }
+            #resultsPanel { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: 100%; max-height: 50vh; border-radius: 12px 12px 0 0; }
+            .navbar .form-control { width: 100% !important; }
+            .navbar .btn { margin-top: 8px; }
+            #suggestions { left: 8px !important; right: 8px !important; width: auto !important; }
         }
     </style>
 </head>
 
 <body>
-    <div class="navbar">
-        <h1>WEB GIS - Schools</h1>
-        <div>
-            <button onclick="home()">Home</button>
-            <button onclick="downloadGeoJSON()">Download</button>
-            <button onclick="triggerFileInput()">Upload</button>
-            <input type="file" id="fileInput" accept=".geojson" onchange="uploadGeoJSON(event)">
-            <button onclick="showFAQs()">FAQs</button>
+        <nav class="navbar navbar-expand-lg navbar-dark" style="background:#004d40;">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">WEB GIS - Schools</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="mainNav">
+                    <form class="d-flex ms-2 flex-grow-1" onsubmit="event.preventDefault(); doSearch(document.getElementById('search').value)">
+                        <input id="search" class="form-control me-2" placeholder="Search schools..." aria-label="Search" aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false">
+                        <div id="suggestions" role="listbox" aria-label="Search suggestions" style="position:absolute;z-index:2000;background:white;border:1px solid #ccc;display:none"></div>
+                        <button class="btn btn-outline-light ms-1" type="button" onclick="doSearch(document.getElementById('search').value)">Search</button>
+                    </form>
+                    <ul class="navbar-nav ms-3">
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('page_nearest') }}">Nearest</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('page_buffer') }}">Buffer</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('page_stats') }}">Stats</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('page_analysis') }}">Analysis</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('page_coverage') }}">Coverage</a></li>
+                    </ul>
+                    <div class="d-flex ms-3">
+                        <button class="btn btn-light btn-sm me-2" onclick="downloadGeoJSON()">Download</button>
+                        <button class="btn btn-light btn-sm" onclick="triggerFileInput()">Upload</button>
+                        <input type="file" id="fileInput" accept=".geojson" onchange="uploadGeoJSON(event)">
+                    </div>
+                </div>
+            </div>
+        </nav>
+    <div id="map"></div>
+    <div id="resultsPanel" role="dialog" aria-modal="true" aria-labelledby="resultsTitle" style="position:absolute;right:10px;top:70px;width:320px;max-height:70vh;overflow:auto;background:rgba(255,255,255,0.95);z-index:1500;border:1px solid #ccc;padding:8px;display:none">
+        <button class="sheet-close" aria-label="Close results" onclick="closeResultsPanel()">✕</button>
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <h4 id="resultsTitle" style="margin:4px 0">Search Results</h4>
+        <div id="resultsList"></div>
+        <hr>
+        <div id="detailsPanel" style="display:none">
+            <h4 id="detailsTitle"></h4>
+            <pre id="detailsProps" style="white-space:pre-wrap;max-height:200px;overflow:auto"></pre>
+            <button id="addToDbBtn" style="display:none">Add to DB</button>
         </div>
     </div>
-    <div id="map"></div>
-    <div class="legend" id="mapLegend">
-        <h4>Legend</h4>
-        <div>
-            <span style="background: #abb395;"></span> Schools
+    <div class="legend" id="mapLegend" aria-hidden="false" style="min-width:180px;">
+        <div class="d-flex justify-content-between align-items-center">
+            <strong id="legendTitle">Legend</strong>
+            <button id="legendToggle" class="btn btn-sm btn-outline-secondary" aria-expanded="true" aria-controls="legendBody">Hide</button>
+        </div>
+        <div id="legendBody" class="mt-2">
+            <div class="d-flex align-items-center mb-1">
+                <span style="display:inline-block;width:18px;height:18px;background:#abb395;border-radius:3px;margin-right:8px"></span>
+                <span>Schools</span>
+                <small class="text-muted ms-auto" id="legendCount">—</small>
+            </div>
+            <div class="small text-muted">Tip: use draw tools to filter the map; legend updates automatically.</div>
         </div>
     </div>
     <footer>Created by <a href="https://clementndome.github.io/ClmNios/" style="color: white; text-decoration: none;">Clement Ndome</a> © <script>document.write(new Date().getFullYear())</script></footer>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    {% if use_local_leaflet_draw %}
+        <script src="{{ url_for('static', filename='vendor/leaflet-draw/leaflet.draw.js') }}"></script>
+    {% else %}
+        <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"{% if leaflet_draw_integrity.get('js') %} integrity="{{ leaflet_draw_integrity['js'] }}" crossorigin="anonymous"{% endif %}></script>
+        <script>
+            // Fallback: if draw not available (blocked by SRI or CDN), try an alternate CDN
+            (function(){
+                function ensureDraw(){
+                    if (typeof L === 'undefined' || typeof L.Control === 'undefined' || typeof L.Control.Draw === 'undefined'){
+                        var s = document.createElement('script');
+                        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js';
+                        s.onload = function(){ console.log('Loaded leaflet.draw fallback'); };
+                        s.onerror = function(){ console.warn('Fallback leaflet.draw failed'); };
+                        document.head.appendChild(s);
+                    }
+                }
+                // run after DOM load where L should be available
+                if (document.readyState === 'complete') ensureDraw(); else window.addEventListener('load', ensureDraw);
+            })();
+        </script>
+    {% endif %}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const map = L.map('map').setView([-1.286389, 36.817223], 7);
+        // Template-provided center and zoom
+        const center = {{ center|tojson }};
+        const zoom = {{ zoom|tojson }};
+        const map = L.map('map').setView(center, zoom);
 
         // Add OpenStreetMap tiles
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -129,39 +145,377 @@
 
 
 
-        // Define a custom school icon
+        // Define a custom school icon (use Leaflet's default marker icon via CDN)
         const schoolIcon = L.icon({
-            iconUrl: 'https://example.com/school-icon.png', // Replace with your icon URL
-            iconSize: [32, 32], // Adjust size as needed
-            iconAnchor: [16, 32], // Anchor the icon at the bottom center
-            popupAnchor: [0, -32] // Adjust popup position relative to the icon
+            iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+            iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
         });
-        // Fetch GeoJSON data and add to the map with clustering
-        fetch('/schools')
-            .then(response => response.json())
-            .then(data => {
+        // Function to load features from an endpoint and show them
+        async function loadAndShow(url) {
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                markers.clearLayers();
                 L.geoJSON(data, {
-                    pointToLayer: (feature, latlng) => {
-                        // Create a marker for each feature
-                        return L.marker(latlng);
-                    },
+                    pointToLayer: (feature, latlng) => L.marker(latlng, {icon: schoolIcon}),
                     onEachFeature: (feature, layer) => {
-                        // Add a popup with the school name
-                        if (feature.properties && feature.properties.NAME) {
-                            layer.bindPopup(`<strong>${feature.properties.NAME}</strong>`);
-                        }
+                        const p = feature.properties || {};
+                        const title = p.name || p.NAME || p.Name || p.display_name || 'School';
+                        layer.bindPopup(`<strong>${title}</strong>`);
+                        layer.on('click', function(){ showDetails(feature); });
                     }
-                }).eachLayer(layer => {
-                    markers.addLayer(layer); // Add each marker to the cluster group
-                });
+                }).eachLayer(layer => markers.addLayer(layer));
+                if (!map.hasLayer(markers)) map.addLayer(markers);
+            } catch (err) {
+                console.error('Error loading features', err);
+            }
+        }
 
-                map.addLayer(markers); // Add the cluster group to the map
-            })
-            .catch(error => console.error('Error loading GeoJSON data:', error));
+        // Load all features initially
+        loadAndShow("{{ url_for('get_schools') }}");
+
+        // Update legend based on markers count or feature collection
+        function updateLegend(count) {
+            const legend = document.getElementById('mapLegend');
+            const countEl = document.getElementById('legendCount');
+            const body = document.getElementById('legendBody');
+            if (typeof count === 'undefined') {
+                // try to infer from markers
+                try { count = markers.getLayers().length; } catch (e) { count = 0; }
+            }
+            countEl.textContent = count + ' shown';
+            // hide legend if no results
+            if (count === 0) { legend.style.display = 'none'; } else { legend.style.display = ''; }
+        }
+
+        // legend toggle
+        document.getElementById('legendToggle').addEventListener('click', function(){
+            const btn = this; const body = document.getElementById('legendBody');
+            const expanded = btn.getAttribute('aria-expanded') === 'true';
+            if (expanded) {
+                body.style.display = 'none'; btn.textContent = 'Show'; btn.setAttribute('aria-expanded','false');
+            } else {
+                body.style.display = ''; btn.textContent = 'Hide'; btn.setAttribute('aria-expanded','true');
+            }
+        });
+
+    // --- Search box with autocomplete and results panel ---
+        let searchTimer = null;
+        const searchEl = document.getElementById('search');
+        const suggestionsEl = document.getElementById('suggestions');
+    const resultsPanel = document.getElementById('resultsPanel');
+    const resultsList = document.getElementById('resultsList');
+    const detailsPanel = document.getElementById('detailsPanel');
+    const detailsTitle = document.getElementById('detailsTitle');
+    const detailsProps = document.getElementById('detailsProps');
+    const addToDbBtn = document.getElementById('addToDbBtn');
+
+    let currentResults = [];
+    let selectedIndex = -1;
+    let lastFocusedElement = null;
+    let touchStartY = null;
+
+        async function doSearch(term) {
+            if (!term) { suggestionsEl.style.display='none'; return; }
+            try {
+                const res = await fetch(`{{ url_for('schools_search') }}?term=${encodeURIComponent(term)}&external=1`);
+                const data = await res.json();
+                // build suggestions list
+                suggestionsEl.innerHTML = '';
+                if ((data.features||[]).length === 0) { suggestionsEl.style.display='none'; return; }
+                currentResults = data.features || [];
+                suggestionsEl.innerHTML = '';
+                resultsList.innerHTML = '';
+                currentResults.forEach((f, i) => {
+                    const name = f.properties.name || f.properties.NAME || f.properties.display_name || 'Unknown';
+                    // suggestion entry
+                    const sdiv = document.createElement('div');
+                    sdiv.className = 'suggestion-item';
+                    sdiv.style.padding = '6px';
+                    sdiv.style.cursor = 'pointer';
+                    sdiv.tabIndex = -1; // managed via aria-activedescendant
+                    sdiv.id = `suggest-${i}`;
+                    sdiv.setAttribute('role','option');
+                    sdiv.setAttribute('aria-selected','false');
+                    sdiv.textContent = name + (f.properties.source ? ` (${f.properties.source})` : '');
+                    sdiv.dataset.index = i;
+                    sdiv.onclick = () => selectResult(i);
+                    suggestionsEl.appendChild(sdiv);
+
+                    // results panel entry
+                    const rdiv = document.createElement('div');
+                    rdiv.className = 'result-item';
+                    rdiv.style.padding = '6px';
+                    rdiv.style.borderBottom = '1px solid #eee';
+                    rdiv.style.cursor = 'pointer';
+                    rdiv.tabIndex = 0;
+                    rdiv.setAttribute('role','button');
+                    rdiv.textContent = name + (f.properties.source ? ` (${f.properties.source})` : '');
+                    rdiv.dataset.index = i;
+                    rdiv.onclick = () => selectResult(i);
+                    rdiv.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); selectResult(i); } });
+                    resultsList.appendChild(rdiv);
+                });
+                suggestionsEl.style.display='block';
+                searchEl.setAttribute('aria-expanded','true');
+                // open results panel (bottom sheet on small screens)
+                if (currentResults.length) openResultsPanel();
+                selectedIndex = -1;
+                // position suggestions below search input (responsive)
+                const rect = searchEl.getBoundingClientRect();
+                if (window.innerWidth <= 767) {
+                    suggestionsEl.style.left = '8px';
+                    suggestionsEl.style.right = '8px';
+                    suggestionsEl.style.width = 'auto';
+                    suggestionsEl.style.top = (rect.bottom + 8 + window.scrollY) + 'px';
+                } else {
+                    suggestionsEl.style.left = rect.left + 'px';
+                    suggestionsEl.style.top = (rect.bottom + window.scrollY) + 'px';
+                    suggestionsEl.style.width = rect.width + 'px';
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        searchEl.addEventListener('input', (ev) => {
+            const term = ev.target.value;
+            if (searchTimer) clearTimeout(searchTimer);
+            searchTimer = setTimeout(()=> doSearch(term), 250);
+        });
+
+        // keyboard navigation for suggestions/results
+        searchEl.addEventListener('keydown', (ev) => {
+            if (!['ArrowDown','ArrowUp','Enter','Escape'].includes(ev.key)) return;
+            const items = suggestionsEl.querySelectorAll('div');
+            if (ev.key === 'ArrowDown') {
+                ev.preventDefault();
+                if (selectedIndex < items.length - 1) selectedIndex++; else selectedIndex = 0;
+                highlightSuggestion(items, selectedIndex);
+            } else if (ev.key === 'ArrowUp') {
+                ev.preventDefault();
+                if (selectedIndex > 0) selectedIndex--; else selectedIndex = items.length - 1;
+                highlightSuggestion(items, selectedIndex);
+            } else if (ev.key === 'Enter') {
+                ev.preventDefault();
+                if (selectedIndex >= 0) {
+                    selectResult(selectedIndex);
+                } else {
+                    // trigger search
+                    doSearch(searchEl.value);
+                }
+            } else if (ev.key === 'Escape') {
+                suggestionsEl.style.display='none';
+            }
+        });
+
+        function highlightSuggestion(items, idx) {
+            items.forEach((it, i) => { it.style.background = i===idx ? '#eef' : 'transparent'; it.setAttribute('aria-selected', i===idx ? 'true' : 'false'); });
+            if (items[idx]) items[idx].scrollIntoView({block:'nearest'});
+            // set aria-activedescendant on the input
+            const active = items[idx];
+            if (active) searchEl.setAttribute('aria-activedescendant', active.id); else searchEl.removeAttribute('aria-activedescendant');
+        }
+
+        function selectResult(i) {
+            const f = currentResults[i];
+            if (!f) return;
+            suggestionsEl.style.display='none';
+            searchEl.setAttribute('aria-expanded','false');
+            openResultsPanel();
+            // show marker and pan
+            markers.clearLayers();
+            L.geoJSON(f, { pointToLayer: (feature, latlng) => L.marker(latlng, {icon: schoolIcon}), onEachFeature: (feature, layer) => layer.bindPopup(f.properties.name||f.properties.NAME||'School') }).eachLayer(l=>markers.addLayer(l));
+            if (f.geometry && f.geometry.coordinates) {
+                const coords = f.geometry.coordinates;
+                const latlng = [coords[1], coords[0]];
+                map.setView(latlng, 15);
+            }
+            showDetails(f);
+        }
+
+        // Focus trap helpers for results panel
+        function openResultsPanel() {
+            lastFocusedElement = document.activeElement;
+            resultsPanel.style.display = 'block';
+            resultsPanel.classList.add('open');
+            // move focus to first focusable element inside panel
+            const focusable = resultsPanel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+            if (focusable.length) focusable[0].focus();
+            // keyboard close (escape) and trap
+            document.addEventListener('keydown', handlePanelKeydown);
+            resultsPanel.addEventListener('touchstart', handleTouchStart);
+            resultsPanel.addEventListener('touchmove', handleTouchMove);
+            resultsPanel.addEventListener('touchend', handleTouchEnd);
+        }
+
+        function closeResultsPanel() {
+            resultsPanel.style.display = 'none';
+            resultsPanel.classList.remove('open');
+            searchEl.removeAttribute('aria-activedescendant');
+            searchEl.setAttribute('aria-expanded','false');
+            document.removeEventListener('keydown', handlePanelKeydown);
+            resultsPanel.removeEventListener('touchstart', handleTouchStart);
+            resultsPanel.removeEventListener('touchmove', handleTouchMove);
+            resultsPanel.removeEventListener('touchend', handleTouchEnd);
+            if (lastFocusedElement) try { lastFocusedElement.focus(); } catch (e) {}
+        }
+
+        function handlePanelKeydown(ev) {
+            if (ev.key === 'Escape') { ev.preventDefault(); closeResultsPanel(); }
+            // simple focus trap: keep Tab inside panel
+            if (ev.key === 'Tab') {
+                const focusable = Array.from(resultsPanel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter(el => !el.disabled);
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (!resultsPanel.contains(document.activeElement)) {
+                    first.focus();
+                    ev.preventDefault();
+                } else if (ev.shiftKey && document.activeElement === first) {
+                    last.focus();
+                    ev.preventDefault();
+                } else if (!ev.shiftKey && document.activeElement === last) {
+                    first.focus();
+                    ev.preventDefault();
+                }
+            }
+        }
+
+        // touch handling for swipe to close (vertical drag)
+        function handleTouchStart(e) { touchStartY = e.touches[0].clientY; }
+        function handleTouchMove(e) {
+            if (touchStartY === null) return;
+            const delta = e.touches[0].clientY - touchStartY;
+            // translate panel visually while dragging
+            if (delta > 0) { resultsPanel.style.transform = `translateY(${delta}px)`; }
+        }
+        function handleTouchEnd(e) {
+            if (touchStartY === null) return;
+            const endY = e.changedTouches[0].clientY;
+            const delta = endY - touchStartY;
+            resultsPanel.style.transform = '';
+            touchStartY = null;
+            // if dragged down more than 80px close
+            if (delta > 80) closeResultsPanel();
+        }
+
+        function showDetails(f) {
+            detailsPanel.style.display = 'block';
+            const name = f.properties.name || f.properties.NAME || f.properties.display_name || 'School';
+            detailsTitle.textContent = name + (f.properties.source ? ` (${f.properties.source})` : '');
+            detailsProps.textContent = JSON.stringify(f.properties, null, 2);
+            if (f.properties.source === 'nominatim') {
+                addToDbBtn.style.display = 'inline-block';
+                addToDbBtn.onclick = async () => {
+                    try {
+                        const res = await fetch('{{ url_for('schools_add') }}', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ feature: f }) });
+                        const json = await res.json();
+                        if (json.duplicate) {
+                            alert('Duplicate found, existing id: ' + json.existing_id);
+                        } else if (json.error) {
+                            alert('Error: ' + json.error);
+                        } else {
+                            alert('Added: ' + JSON.stringify(json));
+                            loadAndShow("{{ url_for('get_schools') }}");
+                        }
+                    } catch (e) { console.error(e); alert('Add failed'); }
+                };
+            } else {
+                addToDbBtn.style.display = 'none';
+            }
+        }
+
+        // results panel keyboard navigation
+        function highlightResult(items, idx) {
+            items.forEach((it, i) => { it.style.background = i===idx ? '#eef' : 'transparent'; });
+            if (items[idx]) items[idx].scrollIntoView({block:'nearest'});
+        }
+
+        document.addEventListener('keydown', (ev) => {
+            if (resultsPanel.style.display !== 'block') return;
+            if (!currentResults || currentResults.length === 0) return;
+            const items = resultsList.querySelectorAll('.result-item');
+            if (items.length === 0) return;
+            if (ev.key === 'ArrowDown') {
+                ev.preventDefault();
+                if (selectedIndex < items.length - 1) selectedIndex++; else selectedIndex = 0;
+                highlightResult(items, selectedIndex);
+            } else if (ev.key === 'ArrowUp') {
+                ev.preventDefault();
+                if (selectedIndex > 0) selectedIndex--; else selectedIndex = items.length - 1;
+                highlightResult(items, selectedIndex);
+            } else if (ev.key === 'Enter') {
+                ev.preventDefault();
+                if (selectedIndex >= 0) selectResult(selectedIndex);
+            } else if (ev.key === 'Escape') {
+                resultsPanel.style.display = 'none';
+            }
+        });
+
+        // --- Leaflet.draw integration ---
+        // FeatureGroup to store drawn items
+        const drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        const drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                polygon: true,
+                rectangle: true,
+                polyline: false,
+                circle: false,
+                marker: false,
+                circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        map.on(L.Draw.Event.CREATED, function (event) {
+            const layer = event.layer;
+            drawnItems.clearLayers();
+            drawnItems.addLayer(layer);
+
+            if (event.layerType === 'rectangle') {
+                const bounds = layer.getBounds();
+                const sw = bounds.getSouthWest();
+                const ne = bounds.getNorthEast();
+                const bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`; // minx,miny,maxx,maxy
+                loadAndShow(`{{ url_for('get_schools') }}?bbox=${bbox}`);
+            } else if (event.layerType === 'polygon') {
+                // send polygon geometry to /schools/within
+                const gj = layer.toGeoJSON().geometry;
+                fetch('{{ url_for('schools_within') }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ geometry: gj })
+                }).then(r => r.json()).then(data => {
+                    markers.clearLayers();
+                    L.geoJSON(data, { pointToLayer: (f, latlng) => L.marker(latlng, {icon: schoolIcon}), onEachFeature: (f,l)=>l.bindPopup(f.properties.name||f.properties.NAME||'School') }).eachLayer(l=>markers.addLayer(l));
+                    if (!map.hasLayer(markers)) map.addLayer(markers);
+                    if (drawnItems.getBounds) map.fitBounds(drawnItems.getBounds());
+                }).catch(err => console.error(err));
+            }
+        });
+
+        // Add a small control to clear drawings and markers
+        L.Control.Clear = L.Control.extend({
+            onAdd: function(map) {
+                const el = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+                el.style.background = '#fff'; el.style.padding = '2px'; el.title = 'Clear drawn and results';
+                el.innerHTML = 'Clear';
+                el.onclick = function(){ drawnItems.clearLayers(); markers.clearLayers(); };
+                return el;
+            }
+        });
+        map.addControl(new L.Control.Clear({ position: 'topleft' }));
 
         // Download GeoJSON
         function downloadGeoJSON() {
-            fetch('/schools')
+            fetch('{{ url_for('get_schools') }}')
                 .then(response => response.json())
                 .then(data => {
                     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -190,7 +544,8 @@
                             layer.bindPopup(`<strong>${feature.properties.name}</strong>`);
                         }
                     }
-                }).addTo(map);
+                }).eachLayer(layer => markers.addLayer(layer));
+                if (!map.hasLayer(markers)) map.addLayer(markers);
             };
             reader.readAsText(file);
         }
@@ -202,7 +557,7 @@
 
         // Home button functionality
         function home() {
-            map.setView([-1.286389, 36.817223], 7);
+            map.setView(center, zoom);
         }
     </script>
 </body>
